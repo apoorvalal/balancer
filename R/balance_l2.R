@@ -19,9 +19,7 @@ l2_balance_internal <- function(Xz, targetz,
                                 exact_global = T, target_propz = NULL,
                                 verbose = TRUE,
                                 eps_abs = 1e-5, eps_rel = 1e-5, ...) {
-
-
-  if(exact_global & is.null(target_propz)) {
+  if (exact_global & is.null(target_propz)) {
     stop("If enforcing an exact global constraint with exact_global = T, then
          target_propz must not be NULL")
   }
@@ -33,55 +31,68 @@ l2_balance_internal <- function(Xz, targetz,
 
 
   # Setup the components of the QP and solve
-  if(verbose) message("Creating linear term vector...")
+  if (verbose) message("Creating linear term vector...")
   # concenate targets for each group
-  q <- - do.call(c, targetz)
+  q <- -do.call(c, targetz)
 
-  q <- Matrix::sparseVector(q, (n + 1):(n + aux_dim),
-                            n + aux_dim)
+  q <- Matrix::sparseVector(
+    q, (n + 1):(n + aux_dim),
+    n + aux_dim
+  )
 
-  if(verbose) message("Creating quadratic term matrix...")
+  if (verbose) message("Creating quadratic term matrix...")
   P <- Matrix::bdiag(Matrix::Matrix(0, n, n), Matrix::Diagonal(aux_dim))
 
   I0 <- create_I0_matrix_multi(Xz, scale_sample_size, n, aux_dim)
   P <- P + lambda * I0
 
-  if(verbose) message("Creating constraint matrix...")
-  constraints <- create_constraints_l2(Xz, targetz, target_propz, lowlim, uplim,
-                                       exact_global, verbose)
+  if (verbose) message("Creating constraint matrix...")
+  constraints <- create_constraints_l2(
+    Xz, targetz, target_propz, lowlim, uplim,
+    exact_global, verbose
+  )
 
 
-  settings <- do.call(osqp::osqpSettings,
-                      c(list(verbose = verbose,
-                              eps_rel = eps_rel,
-                              eps_abs = eps_abs),
-                      list(...)))
+  settings <- do.call(
+    osqp::osqpSettings,
+    c(
+      list(
+        verbose = verbose,
+        eps_rel = eps_rel,
+        eps_abs = eps_abs
+      ),
+      list(...)
+    )
+  )
 
   solution <- osqp::solve_osqp(P, q, constraints$A,
-                                  constraints$l, constraints$u,
-                                  pars = settings)
+    constraints$l, constraints$u,
+    pars = settings
+  )
 
   cumsumnj <- cumsum(c(1, nz))
-  imbalance <- do.call(rbind, lapply(1:J,
-                      function(j) {
-                        wts <- solution$x[cumsumnj[j]:(cumsumnj[j + 1] - 1)]
-                        targetz[[j]] - Matrix::t(Xz[[j]]) %*% wts
-                      }))
-  
+  imbalance <- do.call(rbind, lapply(
+    1:J,
+    function(j) {
+      wts <- solution$x[cumsumnj[j]:(cumsumnj[j + 1] - 1)]
+      targetz[[j]] - Matrix::t(Xz[[j]]) %*% wts
+    }
+  ))
 
-  if(exact_global) {
+
+  if (exact_global) {
     global_imbal <- colSums(t(t(imbalance) * target_propz))
   } else {
     global_imbal <- NULL
   }
-  
+
   # compute overall imbalance
 
-  return(list(weights = solution$x[1:n],
-              imbalance = imbalance,
-              global_imbalance = global_imbal
-              ))
-
+  return(list(
+    weights = solution$x[1:n],
+    imbalance = imbalance,
+    global_imbalance = global_imbal
+  ))
 }
 
 
@@ -96,8 +107,7 @@ l2_balance_internal <- function(Xz, targetz,
 #'
 #' @return A, l, and u
 create_constraints_l2 <- function(Xz, targetz, target_propz, lowlim, uplim,
-                                 exact_global, verbose) {
-
+                                  exact_global, verbose) {
   J <- length(Xz)
 
   d <- ncol(Xz[[1]])
@@ -109,51 +119,51 @@ create_constraints_l2 <- function(Xz, targetz, target_propz, lowlim, uplim,
 
 
 
-  if(verbose) message("\tx Sum to one constraint")
+  if (verbose) message("\tx Sum to one constraint")
   # sum-to-target proportions constraint for each group
   A1 <- Matrix::t(Matrix::bdiag(lapply(Xz, function(x) rep(1, nrow(x)))))
-  A1 <- Matrix::cbind2(A1, Matrix::Matrix(0, nrow=nrow(A1), ncol = aux_dim))
+  A1 <- Matrix::cbind2(A1, Matrix::Matrix(0, nrow = nrow(A1), ncol = aux_dim))
   l1 <- rep(1, J)
   u1 <- rep(1, J)
-  if(verbose) message("\tx Upper and lower bounds")
+  if (verbose) message("\tx Upper and lower bounds")
   # upper and lower bounds
   A2 <- Matrix::Diagonal(n)
   A2 <- Matrix::cbind2(A2, Matrix::Matrix(0, nrow = nrow(A2), ncol = aux_dim))
   l2 <- rep(lowlim, n)
   u2 <- rep(uplim, n)
 
-  if(exact_global) {
-      if(verbose) message("\tx Enforce exact global balance")
-      # Constrain the overall mean to be equal to the target
-      A3 <- do.call(cbind, lapply(1:J, function(j) Xzt[[j]] * target_propz[j]))
-      A3 <- Matrix::cbind2(A3, Matrix::Matrix(0, nrow = nrow(A3), ncol = aux_dim))
-      avg_target <- Reduce(`+`,
-          lapply(1:J, function(j) target_propz[j] * targetz[[j]])
-        )
-      l3 <- avg_target
-      u3 <- avg_target
-      
+  if (exact_global) {
+    if (verbose) message("\tx Enforce exact global balance")
+    # Constrain the overall mean to be equal to the target
+    A3 <- do.call(cbind, lapply(1:J, function(j) Xzt[[j]] * target_propz[j]))
+    A3 <- Matrix::cbind2(A3, Matrix::Matrix(0, nrow = nrow(A3), ncol = aux_dim))
+    avg_target <- Reduce(
+      `+`,
+      lapply(1:J, function(j) target_propz[j] * targetz[[j]])
+    )
+    l3 <- avg_target
+    u3 <- avg_target
   } else {
-      # if(verbose) message("\t(SKIPPING) Enforce exact global balance")
-      # skip this constraint and just make empty
-      A3 <- matrix(, nrow = 0, ncol = ncol(A2))
-      l3 <- numeric(0)
-      u3 <- numeric(0)
+    # if(verbose) message("\t(SKIPPING) Enforce exact global balance")
+    # skip this constraint and just make empty
+    A3 <- matrix(, nrow = 0, ncol = ncol(A2))
+    l3 <- numeric(0)
+    u3 <- numeric(0)
   }
 
-    if(verbose) message("\tx Fit weights to data")
-    # constrain the auxiliary weights to be sqrt(P)'gamma
-    sqrtP <- Matrix::bdiag(Xzt)
-    A4 <- Matrix::cbind2(sqrtP, -Matrix::Diagonal(aux_dim))
-    l4 <- rep(0, aux_dim)
-    u4 <- rep(0, aux_dim)
+  if (verbose) message("\tx Fit weights to data")
+  # constrain the auxiliary weights to be sqrt(P)'gamma
+  sqrtP <- Matrix::bdiag(Xzt)
+  A4 <- Matrix::cbind2(sqrtP, -Matrix::Diagonal(aux_dim))
+  l4 <- rep(0, aux_dim)
+  u4 <- rep(0, aux_dim)
 
-    if(verbose) message("\tx Combining constraints")
-    A <- rbind(A1, A2, A3, A4)
-    l <- c(l1, l2, l3, l4)
-    u <- c(u1, u2, u3, u4)
+  if (verbose) message("\tx Combining constraints")
+  A <- rbind(A1, A2, A3, A4)
+  l <- c(l1, l2, l3, l4)
+  u <- c(u1, u2, u3, u4)
 
-    return(list(A = A, l = l, u = u))
+  return(list(A = A, l = l, u = u))
 }
 
 
@@ -161,8 +171,7 @@ create_constraints_l2 <- function(Xz, targetz, target_propz, lowlim, uplim,
 
 
 reorder_weights <- function(sol, n, trtz, Z) {
-
-  if(is.null(trtz)) {
+  if (is.null(trtz)) {
     trtz <- split(numeric(n), Z)
   }
 
@@ -174,7 +183,7 @@ reorder_weights <- function(sol, n, trtz, Z) {
   idxs <- split(1:length(Z), Z)
 
   cumsumnj <- cumsum(c(1, nz0))
-  for(j in 1:J) {
+  for (j in 1:J) {
     weightsj <- numeric(nz[j])
     weightsj[trtz[[j]] == 0] <- sol[cumsumnj[j]:(cumsumnj[j + 1] - 1)]
     weights[idxs[[j]]] <- weightsj
@@ -206,7 +215,7 @@ reorder_weights <- function(sol, n, trtz, Z) {
 #                         eps_abs = 1e-5, eps_rel = 1e-5, ...) {
 
 
-  
+
 #   # convert X to a matrix
 #   X <- as.matrix(X)
 
@@ -215,7 +224,7 @@ reorder_weights <- function(sol, n, trtz, Z) {
 #   Xz <- split.data.frame(X, Z_factor)
 #   trtz <- split(trt, Z)
 #   J <- length(Xz)
-  
+
 
 #   check_data_multi(X, trt, Z, Xz, lambda, lowlim, uplim)
 
@@ -227,7 +236,7 @@ reorder_weights <- function(sol, n, trtz, Z) {
 #   # get control units in each group
 #   Xz_ctrl <- lapply(1:J, function(j) Xz[[j]][trtz[[j]] == 0,, drop = F])
 
-  
+
 #   sol <- l2_balance_internal(Xz_ctrl, targetz, lambda, lowlim, uplim,
 #                              scale_sample_size,
 #                              exact_global, target_propz,

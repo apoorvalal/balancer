@@ -30,7 +30,7 @@
 #'          \item{data_out }{List containing elements of QP min 0.5 x'Px + q'x st l <= Ax <= u \itemize{
 #'                  \item{P, q}{}
 #'                  \item{constraints }{A, l , u}
-#'}}}
+#' }}}
 #' @export
 standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
                                          kernel0 = kernlab::vanilladot(), lambda = 0,
@@ -39,7 +39,6 @@ standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
                                          return_program = TRUE,
                                          init_uniform = F, eps_abs = 1e-5,
                                          eps_rel = 1e-5, gc, ...) {
-
   # ensure that covariate matrices are matrices and get total number of units
   X0 <- as.matrix(X0)
   Xtau <- as.matrix(Xtau)
@@ -62,8 +61,10 @@ standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
   target <- c(target)
 
   # check arguments for issues
-  check_args_treatment_kernel(X0, Xtau, target, S, Z, pscores, X0s, Xtaus,
-                              as.numeric(nj), lambda, lowlim, uplim, data_in)
+  check_args_treatment_kernel(
+    X0, Xtau, target, S, Z, pscores, X0s, Xtaus,
+    as.numeric(nj), lambda, lowlim, uplim, data_in
+  )
 
   # create propensity score multipliers and split by site
   pro_trt <- Z / (pscores * nj[S_factor])
@@ -72,9 +73,9 @@ standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
   pro_ctr_split <- split(pro_ctr, S_factor)
 
   # construct linear term vector
-  if(verbose) message("Creating linear term vector...")
+  if (verbose) message("Creating linear term vector...")
   # tic("q vector")
-  if(is.null(data_in$q)) {
+  if (is.null(data_in$q)) {
     q <- create_q_vector_treatment(Xtaus, pro_trt_split, target, 0)
   } else {
     q <- data_in$q
@@ -82,28 +83,34 @@ standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
   # toc(log = TRUE)
 
   # construct quadratic term matrix
-  if(verbose) message("Creating quadratic term matrix...")
-  if(is.null(data_in$P)) {
-    P <- create_P_matrix_treatment_kernel(n, X0s, Xtaus, kernel0, kernlab::vanilladot(),
-                                          pro_trt, pro_ctr, S_factor, gc)
+  if (verbose) message("Creating quadratic term matrix...")
+  if (is.null(data_in$P)) {
+    P <- create_P_matrix_treatment_kernel(
+      n, X0s, Xtaus, kernel0, kernlab::vanilladot(),
+      pro_trt, pro_ctr, S_factor, gc
+    )
   } else {
     P <- data_in$P
   }
   # tic("create IO matrix)")
-  I0 <- create_I0_matrix_treatment(pro_trt_split, pro_ctr_split,
-                                   scale_sample_size, nj, n, 0)
+  I0 <- create_I0_matrix_treatment(
+    pro_trt_split, pro_ctr_split,
+    scale_sample_size, nj, n, 0
+  )
   # toc(log = TRUE)
   # tic("P + I0")
   P <- P + lambda * I0
   # toc(log = TRUE)
 
   # construct constraint matrix
-  if(verbose) message("Creating constraint matrix...")
+  if (verbose) message("Creating constraint matrix...")
   # tic("constraint matrix creation")
-  if(is.null(data_in$constraints)) {
-    constraints <- create_constraints_treatment_kernel(X0s, Xtaus, Z, S_factor,
-                                                       pro_trt_split, pro_ctr_split,
-                                                       lowlim, uplim, verbose)
+  if (is.null(data_in$constraints)) {
+    constraints <- create_constraints_treatment_kernel(
+      X0s, Xtaus, Z, S_factor,
+      pro_trt_split, pro_ctr_split,
+      lowlim, uplim, verbose
+    )
   } else {
     constraints <- data_in$constraints
     constraints$l[(J + 1):(J + n)] <- lowlim
@@ -112,56 +119,68 @@ standardize_treatment_hybrid <- function(X0, Xtau, target, S, Z, pscores,
   # toc(log = TRUE)
 
   # set optimization settings
-  settings <- do.call(osqp::osqpSettings,
-                      c(list(verbose = verbose,
-                             eps_rel = eps_rel,
-                             eps_abs = eps_abs),
-                        list(...)))
+  settings <- do.call(
+    osqp::osqpSettings,
+    c(
+      list(
+        verbose = verbose,
+        eps_rel = eps_rel,
+        eps_abs = eps_abs
+      ),
+      list(...)
+    )
+  )
 
   # solve optimization problem (possibly with uniform weights)
   # tic("solve QP")
-  if(init_uniform) {
-    if(verbose) message("Initializing with uniform weights")
+  if (init_uniform) {
+    if (verbose) message("Initializing with uniform weights")
     unifw <- get_uniform_weights_treatment_kernel(nj)
     obj <- osqp::osqp(P, q, constraints$A,
-                      constraints$l, constraints$u, pars = settings)
+      constraints$l, constraints$u,
+      pars = settings
+    )
     obj$WarmStart(x = unifw)
     solution <- obj$Solve()
   } else {
     solution <- osqp::solve_osqp(P, q, constraints$A,
-                                 constraints$l, constraints$u,
-                                 pars = settings)
+      constraints$l, constraints$u,
+      pars = settings
+    )
   }
   # toc(log = TRUE)
 
   # tic("post-processing")
   # convert weights into a matrix
-  if(verbose) message("Reordering weights...")
+  if (verbose) message("Reordering weights...")
   weights <- matrix(0, ncol = J, nrow = n)
   cumsumnj <- cumsum(c(1, nj))
-  for(j in 1:J) {
+  for (j in 1:J) {
     weights[idxs[[j]], j] <- solution$x[cumsumnj[j]:(cumsumnj[j + 1] - 1)]
   }
 
   # compute imbalance matrix
   imbalancetau <- as.matrix(target - t(Xtau) %*% (weights * pro_trt))
   imbalance0 <- as.matrix(t(X0) %*% (weights * pro_trt) -
-                          t(X0) %*% (weights * pro_ctr))
+    t(X0) %*% (weights * pro_ctr))
 
   # collapse weight matrix to vector
   weights <- rowSums(weights)
   # toc(log = TRUE)
 
   # package program components if requested by user
-  if(return_program) {
-    program <- list(P = P  - lambda * I0,
-                    q = q, constraints = constraints)
+  if (return_program) {
+    program <- list(
+      P = P - lambda * I0,
+      q = q, constraints = constraints
+    )
   } else {
     program <- NULL
   }
 
   # return output
-  return(list(weights = weights, imbalance_0 = imbalance0,
-              imbalance_tau = imbalancetau, program = program))
-
+  return(list(
+    weights = weights, imbalance_0 = imbalance0,
+    imbalance_tau = imbalancetau, program = program
+  ))
 }

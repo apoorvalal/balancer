@@ -27,23 +27,29 @@ maxsubset_weights <- function(X, trt, lambda = 0, lowlim = 0, uplim = 1,
 
   constraints <- create_constraints_maxsize(X, trt, lowlim, uplim, verbose, FALSE)
 
-  settings <- do.call(osqp::osqpSettings,
-                      c(list(verbose = verbose,
-                              eps_rel = eps_rel,
-                              eps_abs = eps_abs),
-                      list(...)))
+  settings <- do.call(
+    osqp::osqpSettings,
+    c(
+      list(
+        verbose = verbose,
+        eps_rel = eps_rel,
+        eps_abs = eps_abs
+      ),
+      list(...)
+    )
+  )
 
   solution <- osqp::solve_osqp(P, q, constraints$A,
-                                  constraints$l, constraints$u,
-                                  pars = settings)
+    constraints$l, constraints$u,
+    pars = settings
+  )
 
   wts <- solution$x[1:n]
-  imbal <- colSums((trt / sum(trt) - (1  - trt) / sum(1 - trt)) * wts * X)
+  imbal <- colSums((trt / sum(trt) - (1 - trt) / sum(1 - trt)) * wts * X)
   return(list(weights = wts, imbalance = imbal))
 }
 
 create_constraints_maxsize <- function(X, trt, lowlim, uplim, verbose, exact_balance) {
-
   n <- nrow(X)
   d <- ncol(X)
   n1 <- sum(trt)
@@ -57,10 +63,10 @@ create_constraints_maxsize <- function(X, trt, lowlim, uplim, verbose, exact_bal
 
 
   # upper and lower bounds
-  A2 <-  Matrix::Diagonal(n)
+  A2 <- Matrix::Diagonal(n)
   A2 <- cbind(A2, Matrix::Matrix(0, n, d))
-  l2 <- lowlim * (trt * n1  + (1 - trt) * n0)
-  u2 <- uplim * (trt * n1  + (1 - trt) * n0)
+  l2 <- lowlim * (trt * n1 + (1 - trt) * n0)
+  u2 <- uplim * (trt * n1 + (1 - trt) * n0)
 
   # auxiliary variable
   Xtrt <- (trt / sum(trt) - (1 - trt) / sum(1 - trt)) * X
@@ -69,8 +75,8 @@ create_constraints_maxsize <- function(X, trt, lowlim, uplim, verbose, exact_bal
   u3 <- numeric(d)
 
   # if exact_balance is true, then constrain weights to exactly balance treatment and control
-  if(exact_balance) {
-    A4 <- cbind(matrix(0,ncol = n, nrow = d), diag(d))
+  if (exact_balance) {
+    A4 <- cbind(matrix(0, ncol = n, nrow = d), diag(d))
     l4 <- numeric(d)
     u4 <- numeric(d)
     print(dim(A4))
@@ -111,7 +117,6 @@ maxsubset_weights_cluster <- function(ind_covs, clus_covs, trt, clusters,
                                       lambda = 0, icc = 0, lowlim = 0, uplim = 1,
                                       verbose = TRUE, eps_abs = 1e-5, eps_rel = 1e-5,
                                       ...) {
-  
   # convert X to a matrix
   X <- cbind(ind_covs, clus_covs)
   X <- as.matrix(X)
@@ -119,48 +124,62 @@ maxsubset_weights_cluster <- function(ind_covs, clus_covs, trt, clusters,
   d <- ncol(X)
   m <- length(unique(clusters))
   q <- numeric(n + d + m)
-  P <- create_P_matrix_cluster_overlap(trt, d, m, lambda , icc, FALSE)
+  P <- create_P_matrix_cluster_overlap(trt, d, m, lambda, icc, FALSE)
 
 
   constraints <- create_constraints_maxsize_cluster(X, trt, clusters, lowlim, uplim, verbose, FALSE)
 
-  settings <- do.call(osqp::osqpSettings,
-                      c(list(verbose = verbose,
-                              eps_rel = eps_rel,
-                              eps_abs = eps_abs),
-                      list(...)))
+  settings <- do.call(
+    osqp::osqpSettings,
+    c(
+      list(
+        verbose = verbose,
+        eps_rel = eps_rel,
+        eps_abs = eps_abs
+      ),
+      list(...)
+    )
+  )
 
   solution <- osqp::solve_osqp(P, q, constraints$A,
-                                  constraints$l, constraints$u,
-                                  pars = settings)
+    constraints$l, constraints$u,
+    pars = settings
+  )
 
   wts <- solution$x[1:n]
-  imbal <- colSums((trt / sum(trt) - (1  - trt) / sum(1 - trt)) * wts * X)
+  imbal <- colSums((trt / sum(trt) - (1 - trt) / sum(1 - trt)) * wts * X)
   ind_imbalance <- imbal[1:ncol(ind_covs)]
   clus_imbalance = imbal[(ncol(ind_covs) + 1):(ncol(X))]
-  return(list(weights = wts,
-              ind_imbalance = ind_imbalance,
-              clus_imbalance = clus_imbalance))
+  return(list(
+    weights = wts,
+    ind_imbalance = ind_imbalance,
+    clus_imbalance = clus_imbalance
+  ))
 }
 
 
 create_P_matrix_cluster_overlap <- function(trt, d, m, lambda, icc, exact_balance) {
-
   n <- length(trt)
   # first include a diagonal element for the auxiliary covariates X %*% gamma
-  P1 <- Matrix::bdiag(Matrix::Matrix(0, n, n),
-                      Matrix::Diagonal(d),
-                      Matrix::Matrix(0, m, m))
+  P1 <- Matrix::bdiag(
+    Matrix::Matrix(0, n, n),
+    Matrix::Diagonal(d),
+    Matrix::Matrix(0, m, m)
+  )
   # Add iid variance term
-  I0 <- Matrix::bdiag(Matrix::Diagonal(n) * (trt / sum(trt)^2 + (1 - trt) / sum(1 - trt)^2),
-                      Matrix::Diagonal(d, 0),
-                      Matrix::Matrix(0, m, m))
+  I0 <- Matrix::bdiag(
+    Matrix::Diagonal(n) * (trt / sum(trt)^2 + (1 - trt) / sum(1 - trt)^2),
+    Matrix::Diagonal(d, 0),
+    Matrix::Matrix(0, m, m)
+  )
   P2 <- lambda * (1 - icc) * I0
 
   # add correlation within cluster term
-  P3 <- lambda * icc *  Matrix::bdiag(Matrix::Diagonal(n, 0),
-                                     Matrix::Diagonal(d, 0),
-                                     Matrix::Diagonal(m))
+  P3 <- lambda * icc * Matrix::bdiag(
+    Matrix::Diagonal(n, 0),
+    Matrix::Diagonal(d, 0),
+    Matrix::Diagonal(m)
+  )
 
   P <- P1 + P2 + P3
   return(P)
@@ -170,13 +189,12 @@ create_P_matrix_cluster_overlap <- function(trt, d, m, lambda, icc, exact_balanc
 
 
 create_constraints_maxsize_cluster <- function(X, trt, clusters, lowlim, uplim, verbose, exact_balance) {
-
   n <- nrow(X)
   d <- ncol(X)
   n1 <- sum(trt)
   n0 <- sum(1 - trt)
   cluster_mat <- Matrix::sparse.model.matrix(~ as.factor(clusters) - 1) *
-                    (trt / sum(trt) + (1 - trt) / sum(1 - trt))
+    (trt / sum(trt) + (1 - trt) / sum(1 - trt))
   m <- ncol(cluster_mat)
 
   # sum to number of treated/control units
@@ -188,11 +206,11 @@ create_constraints_maxsize_cluster <- function(X, trt, clusters, lowlim, uplim, 
 
 
   # upper and lower bounds
-  A2 <-  Matrix::Diagonal(n)
+  A2 <- Matrix::Diagonal(n)
   A2 <- cbind(A2, Matrix::Matrix(0, n, d))
   A2 <- Matrix::cbind2(A2, Matrix::Matrix(0, nrow = nrow(A2), ncol = m))
-  l2 <- lowlim * (trt * n1  + (1 - trt) * n0)
-  u2 <- uplim * (trt * n1  + (1 - trt) * n0)
+  l2 <- lowlim * (trt * n1 + (1 - trt) * n0)
+  u2 <- uplim * (trt * n1 + (1 - trt) * n0)
 
   # auxiliary variable
   Xtrt <- (trt / sum(trt) - (1 - trt) / sum(1 - trt)) * X
@@ -208,8 +226,8 @@ create_constraints_maxsize_cluster <- function(X, trt, clusters, lowlim, uplim, 
   u4 <- rep(0, m)
 
   # if exact_balance is true, then constrain weights to exactly balance treatment and control
-  if(exact_balance) {
-    A5 <- cbind(matrix(0,ncol = n, nrow = d), diag(d))
+  if (exact_balance) {
+    A5 <- cbind(matrix(0, ncol = n, nrow = d), diag(d))
     A5 <- Matrix::cbind2(A5, Matrix::Matrix(0, nrow = nrow(A5), ncol = m))
     l5 <- numeric(d)
     u5 <- numeric(d)
@@ -225,4 +243,3 @@ create_constraints_maxsize_cluster <- function(X, trt, clusters, lowlim, uplim, 
 
   return(list(A = A, l = l, u = u))
 }
-
